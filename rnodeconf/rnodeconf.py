@@ -40,7 +40,7 @@ rnode = None
 rnode_serial = None
 rnode_baudrate = 115200
 known_keys = [["unsigned.io", "30819f300d06092a864886f70d010101050003818d0030818902818100e5d46084e445595376bf7efd9c6ccf19d39abbc59afdb763207e4ff68b8d00ebffb63847aa2fe6dd10783d3ea63b55ac66f71ad885c20e223709f0d51ed5c6c0d0b093be9e1d165bb8a483a548b67a3f7a1e4580f50e75b306593fa6067ae259d3e297717bd7ff8c8f5b07f2bed89929a9a0321026cf3699524db98e2d18fb2d020300ff39"]]
-ranges = { 0xA4: [410000000, 525000000, 14], 0xA9: [820000000, 1020000000, 17] }
+ranges = { 0xA4: [410000000, 525000000, 14], 0xA9: [820000000, 1020000000, 17], 0xB1: [127000000, 1020000000, 14] }
 firmware_update_url = "https://github.com/markqvist/RNode_Firmware/raw/master/Precompiled/rnode_firmware_latest.hex"
 
 class RNS():
@@ -70,7 +70,7 @@ class KISS():
     FESC            = 0xDB
     TFEND           = 0xDC
     TFESC           = 0xDD
-    
+
     CMD_UNKNOWN     = 0xFE
     CMD_DATA        = 0x00
     CMD_FREQUENCY   = 0x01
@@ -97,11 +97,11 @@ class KISS():
 
     DETECT_REQ      = 0x73
     DETECT_RESP     = 0x46
-    
+
     RADIO_STATE_OFF = 0x00
     RADIO_STATE_ON  = 0x01
     RADIO_STATE_ASK = 0xFF
-    
+
     CMD_ERROR           = 0x90
     ERROR_INITRADIO     = 0x01
     ERROR_TXFAILED      = 0x02
@@ -117,6 +117,7 @@ class ROM():
     PRODUCT_RNODE  = 0x03
     MODEL_A4       = 0xA4
     MODEL_A9       = 0xA9
+    MODEL_B1       = 0xB1
 
     ADDR_PRODUCT   = 0x00
     ADDR_MODEL     = 0x01
@@ -139,7 +140,7 @@ class ROM():
 class RNode():
     def __init__(self, serial_instance):
         self.serial = serial_instance
-        self.timeout     = 100
+        self.timeout     = 500
 
         self.r_frequency = None
         self.r_bandwidth = None
@@ -197,7 +198,7 @@ class RNode():
                 if self.serial.in_waiting:
                     byte = ord(self.serial.read(1))
                     last_read_ms = int(time.time()*1000)
-
+                    #print(chr(byte),end='',flush=True)
                     if (in_frame and byte == KISS.FEND and command == KISS.CMD_ROM_READ):
                         self.eeprom = data_buffer
                         in_frame = False
@@ -331,17 +332,17 @@ class RNode():
                             self.r_random = byte
                         elif (command == KISS.CMD_ERROR):
                             if (byte == KISS.ERROR_INITRADIO):
-                                RNS.log(str(self)+" hardware initialisation error (code "+RNS.hexrep(byte)+")")
+                                RNS.log(str(self)+" hardware initialisation error (code "+RNS.hexrep([byte])+")")
                             elif (byte == KISS.ERROR_INITRADIO):
-                                RNS.log(str(self)+" hardware TX error (code "+RNS.hexrep(byte)+")")
+                                RNS.log(str(self)+" hardware TX error (code "+RNS.hexrep([byte])+")")
                             else:
-                                RNS.log(str(self)+" hardware error (code "+RNS.hexrep(byte)+")")
+                                RNS.log(str(self)+" hardware error (code "+RNS.hexrep([byte])+")")
                         elif (command == KISS.CMD_DETECT):
                             if byte == KISS.DETECT_RESP:
                                 self.detected = True
                             else:
                                 self.detected = False
-                        
+
                 else:
                     time_since_last = int(time.time()*1000) - last_read_ms
                     if len(data_buffer) > 0 and time_since_last > self.timeout:
@@ -476,6 +477,7 @@ class RNode():
             self.parse_eeprom()
 
     def parse_eeprom(self):
+        print(self.eeprom[ROM.ADDR_INFO_LOCK])
         if self.eeprom[ROM.ADDR_INFO_LOCK] == ROM.INFO_LOCK_BYTE:
             from cryptography.hazmat.primitives import hashes
             from cryptography.hazmat.backends import default_backend
@@ -529,7 +531,7 @@ class RNode():
                 from cryptography.hazmat.primitives.serialization import load_der_private_key
                 from cryptography.hazmat.primitives.asymmetric import padding
 
-                # Try loading local signing key for 
+                # Try loading local signing key for
                 # validation of self-signed devices
                 if os.path.isdir("./firmware") and os.path.isfile("./firmware/signing.key"):
                     private_bytes = None
@@ -929,6 +931,8 @@ def main():
                         model = ROM.MODEL_A4
                     if args.model == "a9":
                         model = ROM.MODEL_A9
+                    if args.model == "b1":
+                        model = ROM.MODEL_B1
                     if args.hwrev != None and (args.hwrev > 0 and args.hwrev < 256):
                         hwrev = chr(args.hwrev)
 
@@ -986,37 +990,37 @@ def main():
 
 
                             RNS.log("Bootstrapping device EEPROM...")
-
+                            sleep_time = 0.006
                             rnode.write_eeprom(ROM.ADDR_PRODUCT, ROM.PRODUCT_RNODE)
-                            time.sleep(0.006)
+                            time.sleep(sleep_time)
                             rnode.write_eeprom(ROM.ADDR_MODEL, model)
-                            time.sleep(0.006)
+                            time.sleep(sleep_time)
                             rnode.write_eeprom(ROM.ADDR_HW_REV, ord(hwrev))
-                            time.sleep(0.006)
+                            time.sleep(sleep_time)
                             rnode.write_eeprom(ROM.ADDR_SERIAL, serial_bytes[0])
-                            time.sleep(0.006)
+                            time.sleep(sleep_time)
                             rnode.write_eeprom(ROM.ADDR_SERIAL+1, serial_bytes[1])
-                            time.sleep(0.006)
+                            time.sleep(sleep_time)
                             rnode.write_eeprom(ROM.ADDR_SERIAL+2, serial_bytes[2])
-                            time.sleep(0.006)
+                            time.sleep(sleep_time)
                             rnode.write_eeprom(ROM.ADDR_SERIAL+3, serial_bytes[3])
-                            time.sleep(0.006)
+                            time.sleep(sleep_time)
                             rnode.write_eeprom(ROM.ADDR_MADE, time_bytes[0])
-                            time.sleep(0.006)
+                            time.sleep(sleep_time)
                             rnode.write_eeprom(ROM.ADDR_MADE+1, time_bytes[1])
-                            time.sleep(0.006)
+                            time.sleep(sleep_time)
                             rnode.write_eeprom(ROM.ADDR_MADE+2, time_bytes[2])
-                            time.sleep(0.006)
+                            time.sleep(sleep_time)
                             rnode.write_eeprom(ROM.ADDR_MADE+3, time_bytes[3])
-                            time.sleep(0.006)
+                            time.sleep(sleep_time)
 
                             for i in range(0,16):
                                 rnode.write_eeprom(ROM.ADDR_CHKSUM+i, checksum[i])
-                                time.sleep(0.006)
+                                time.sleep(sleep_time)
 
                             for i in range(0,128):
                                 rnode.write_eeprom(ROM.ADDR_SIGNATURE+i, signature[i])
-                                time.sleep(0.006)
+                                time.sleep(sleep_time)
 
                             rnode.write_eeprom(ROM.ADDR_INFO_LOCK, ROM.INFO_LOCK_BYTE)
 
